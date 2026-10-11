@@ -1,5 +1,7 @@
 # PromQL pattern library
 
+Modified 2026-10-11: distinguish unchanged values from missing samples and correct Alloy cardinality controls.
+
 ## Rate, counter, and aggregation
 
 ```promql
@@ -80,10 +82,13 @@ sum(rate(errors_total[5m]))
 ## Absence and staleness
 
 ```promql
-absent(up{job="api"})                  # metric disappeared
-changes(up{job="api"}[5m]) == 0        # value not changing → stale exporter
+absent(up{job="api"})                  # no matching series now
+absent_over_time(up{job="api"}[5m])   # no matching samples in the window
+changes(up{job="api"}[5m]) == 0        # unchanged values, including healthy up=1
 count_over_time(up{job="api"}[5m]) > 0 # at least one sample in window
 ```
+
+These job-only absence checks fire only when the whole selected job has no data. To detect a particular missing target, select its expected `instance` or compare against an expected-target inventory. An unchanged `up` value does not establish exporter staleness.
 
 ## Time offsets
 
@@ -149,15 +154,26 @@ count(http_requests_total)
 count(count by (user_id)(http_requests_total))
 ```
 
-Drop a high-cardinality label at scrape time (Alloy):
+Fix unbounded labels at the instrumentation source. Dropping a distinguishing label does not aggregate samples and can collapse distinct counter series into the same label set. If a whole metric is unnecessary, drop it with a separate Alloy relabel stage after checking dependent queries and alerts:
 
 ```alloy
 prometheus.scrape "api" {
-  targets = [...]
-  rule { source_labels = ["user_id"]
-         action        = "labeldrop" }
+  targets    = [{"__address__" = "127.0.0.1:8080"}]
+  forward_to = [prometheus.relabel.api.receiver]
+}
+
+prometheus.relabel "api" {
+  forward_to = [prometheus.remote_write.default.receiver]
+
+  rule {
+    source_labels = ["__name__"]
+    regex         = "unneeded_debug_metric"
+    action        = "drop"
+  }
 }
 ```
+
+This fragment requires a separately configured `prometheus.remote_write "default"` destination. `rule` belongs inside `prometheus.relabel`, not `prometheus.scrape`. If removing a proven redundant label, `labeldrop` matches label names using `regex`; `source_labels` does not select which label names it removes. Verify that the remaining labels still uniquely identify every series.
 
 ## Other common patterns
 
