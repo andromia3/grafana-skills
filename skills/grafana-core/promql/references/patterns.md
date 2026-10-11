@@ -1,6 +1,6 @@
 # PromQL pattern library
 
-Modified 2026-10-11: distinguish unchanged values from missing samples and correct Alloy cardinality controls.
+Modified 2026-10-11: clarify absence, CPU rate and histogram prerequisites; correct Alloy cardinality controls.
 
 ## Rate, counter, and aggregation
 
@@ -35,7 +35,8 @@ http_requests_total{env=~"staging|production"}
 
 ```promql
 sum(rate(http_requests_total[5m])) by (service)
-avg(node_cpu_seconds_total{mode="idle"}) by (instance)
+# Average idle CPU fraction across cores, per instance
+avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) by (instance)
 
 # Top 5 by request rate
 topk(5, sum(rate(http_requests_total[5m])) by (service))
@@ -57,11 +58,11 @@ histogram_quantile(0.99,
 histogram_quantile(0.95,
   sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service))
 
-# Native histograms (Prometheus 2.40+)
+# Native histogram samples must be exposed, ingested and queryable
 histogram_quantile(0.95, sum(rate(http_request_duration_seconds[5m])))
 ```
 
-Forgetting `by (le)` is the most common bug — `histogram_quantile` returns NaN or wrong values.
+For classic histograms, preserve `le` when aggregating buckets and verify the `+Inf` bucket. Native histograms use histogram samples rather than `le` series; verify exporter, ingestion and backend support for the deployed versions. Empty observations or malformed classic buckets can also produce NaN.
 
 ## Ratios and error rates
 
@@ -78,6 +79,8 @@ sum(rate(http_requests_total{status_code=~"5.."}[5m]))
 sum(rate(errors_total[5m]))
   / (sum(rate(requests_total[5m])) > 0)
 ```
+
+A missing error series is not automatically zero: verify instrumentation semantics before adding a zero fallback. A positive-denominator guard filters zero traffic; it does not invent missing numerator data.
 
 ## Absence and staleness
 
