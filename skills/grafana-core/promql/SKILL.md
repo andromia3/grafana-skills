@@ -1,10 +1,12 @@
 ---
 name: promql
 license: Apache-2.0
-description: Write, validate, and optimize PromQL for Prometheus / Grafana Mimir / Grafana Cloud Metrics. Covers `rate` vs `irate` vs `increase`, label matchers and regex, `sum / avg / topk / by / without` aggregation, classic + native `histogram_quantile`, ratios with divide-by-zero guards, `absent` / `changes` for staleness, time offsets and `predict_linear`, recording-rule naming, SLO + burn-rate math, and a cardinality-hunting playbook. Use when writing a metric query, fixing wrong p95s, building an error-budget alert, debugging "query is slow", finding the noisy label that blew up cardinality, or migrating a dashboard query to a recording rule — even when the user says "calculate the error rate", "p99 latency", "sum by service", "why is this query slow", or "what's filling Mimir" without naming PromQL.
+description: Write, validate, and optimize PromQL for Prometheus / Grafana Mimir / Grafana Cloud Metrics. Covers `rate` vs `irate` vs `increase`, label matchers and regex, `sum / avg / topk / by / without` aggregation, classic + native `histogram_quantile`, ratios with divide-by-zero guards, absence checks and value-change detection, time offsets and `predict_linear`, recording-rule naming, SLO + burn-rate math, and a cardinality-hunting playbook. Use when writing a metric query, fixing wrong p95s, building an error-budget alert, debugging "query is slow", finding the noisy label that blew up cardinality, or migrating a dashboard query to a recording rule — even when the user says "calculate the error rate", "p99 latency", "sum by service", "why is this query slow", or "what's filling Mimir" without naming PromQL.
 ---
 
 # PromQL Query Patterns
+
+Modified 2026-10-11: clarify absence detection and cardinality troubleshooting.
 
 > **Docs**: https://prometheus.io/docs/prometheus/latest/querying/basics/
 
@@ -93,7 +95,7 @@ curl -sG --data-urlencode "query=job:http_request_duration_p95:rate5m" \
 - `histogram_quantile` returns NaN → forgot `by (le)` in the inner aggregation
 - "No data" → check the metric exists (`/api/v1/series`) and the window ≥ 4× scrape interval
 - Wrong rate magnitude → counter was aggregated before `rate()` (always `rate()` first)
-- Query timeout → series count too high; use `topk(...)` + a recording rule + drop high-cardinality labels (see [`references/patterns.md`](references/patterns.md))
+- Query timeout → inspect selector scope and series count; narrow selectors, evaluate recording rules, and fix unbounded instrumentation labels (see [`references/patterns.md`](references/patterns.md)). `topk` limits output series but still evaluates its input; removing distinguishing labels can collapse series.
 
 ## Resources
 
